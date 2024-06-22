@@ -1,0 +1,110 @@
+Readme
+
+	
+	Pentru o cautare eficientă ȋn tabela de rutare, am implementat o organizare sub forma 
+    de arbore a acesteia. Căutarea se face ȋn O(log n). Structura pentru arbore arată ȋn felul 
+    următor: 
+	struct nod_arbore {
+	    struct route_table_entry *entry;
+	    struct nod_arbore *left;
+	    struct nod_arbore *right;
+    }; 
+
+    Această structură conţine o intrare ȋn tabela de intrare şi fiecare nod poate avea 2 fii.
+Ȋn programul principal, am ȋnceput cu funcţiile care lucrează pe arbore. 
+Funcţia new_nod_arbore alocă dinamic un nod de dimensiune nod_arbore şi 
+iniţializează toate cȃmpurile cu NULL. Nodul nou creat este returnat.
+    Funcţia adauga_nod are rolul de a insera ȋn arbore un nod nou. Această funcţie 
+primeşte ca parametri un nod al arborelui şi un parametru de tip route_table_entry. Iau de la 
+ultimul parametru al funcţiei prefixul şi masca. Navighez cu variabila nod_curent prin arbore. 
+    Pentru fiecare poziție de bit, se extrage bitul corespunzător din prefix și din mască 
+subrețelei. Dacă bitul din masca subrețelei este setat (adică este diferit de 0), se continuă 
+navigarea în arbore. Dacă bitul din prefix este setat, se navighează către dreapta (folosind 
+copilul drept al nodului curent) sau, în caz contrar, se navighează către stânga (folosind 
+copilul stâng al nodului curent). Dacă nodul corespunzător direcției respective nu există, este 
+creat folosind funcția new_nod_arbore. Repet acelaşi procedeu ȋn acest for de 32 de ori.
+După ce s-a ajuns la ultima poziție de bit, se atribuie intrarea (adresa de următoare poartă 
+de ieșire) nodului curent.
+	Funcţia caută are rolul de a căuta ȋn arbore. Dacă gaseşte un nod bun (dacă nodul are o 
+intrare validă), o salvează ȋn variabila match.  Expresia ip & (1u << i) verifică că bitul i 
+este setat. Dacă este setat, căutarea continuă ȋn dreapta. Dacă bitul nu e setat, va căuta ȋn 
+stȃnga.
+	Funcţia eliberare_memorie_arbore eliberează memoria la final. Ea foloseşte o stivă pentru 
+eliberarea uşoară a memoriei. Parcurg arborele şi eliberez fiecare nod, apoi eliberez şi stiva. 
+De menţionat că dacă nu e spaţiu să aloc stiva (1000 * sizeof(nod_arbore)), nu pot elibera 
+arborele. 
+	Funcţia get_best_route primeşte adresa ip de destinaţie şi apelează funcţia caută, care se 
+uită ȋn rtable după o potrivire. (iniţial am făcut-o ca la laborator, doar cu un for prin tabela 
+de rutare, ȋnsă am observat că este ineficient).
+	Soluţia a fost să creez un arbore pentru tabela de rutare.
+	Funcţia prepare_ip_header primeşte ca parametri un header de IPV4 şi interfaţa de lucru. Ȋn 
+această funcţie, destinaţia devine expeditorul, setez TTL la 64 (default). Modific lungimea 
+headerului IPv4, sursa devine adresa IP a reţelei (cu funcţia get_mac_address) şi checksum-ul 
+este recalculat (pentru a păstra integritatea pachetului).
+	Funcţia prepare_icmp_header primeşte ca parametri un header icmp, un tip şi un cod uint8_t 
+(primele 2 din structura icmphdr de la ICMP din cerinţă). Ȋn această funcţie, setez memoria 
+alocată pentru acest header pe 0. Setez code şi type ca fiind cele primite ca parametri şi 
+recalculez checksum-ul.
+	Funcţia add_icmp_data primeşte ca parametri un buffer, o lungime şi un header IPv4. Copiez 
+din headerul IPv4 ȋn data primii 1600 de octeţi (lungimea maximă). Copiez apoi din data ȋn 
+bufferul ICMP, ȋncepȃnd cu ICMP_DATA_START + buffer, apoi eliberez memoria alocată pentru data 
+şi măresc lungimea.
+	Funcţia mesaj_icmp primeşte ca parametri type şi code de la pachetul icmp. Mai primeste o 
+interfaţă de tip int, buffer şi o lungime. Practic această funcţie creeză un pachet ICMP complet 
+cu tot ceea ce are nevoie. Această funcţie apelează ultimele 3 funcţii din urmă: 
+-prepare_ip_header, care setează TTL şi calculează checksum
+-prepare_icmp_header, care setează code şi type şi verifică checksum 
+-add_icmp_data care creează mesajul final
+
+	Următoarele 2 funcţii sunt foarte scurte (un rȃnd). Funcţiile host_unreacheable şi timeout 
+primesc ambele ca parametri un buffer, o interfaţă de tip int şi o lungime. Aceste 2 funcţii mă 
+ajută să trec testele host_unreachable şi icmp_timeout(am avut mult de lucru, deoarece aceste 2 
+teste nu treceau).  Ambele funcţii returnează un mesaj icmp:
+-timeout returnează  mesaj_icmp(ICMP_TIME_EXCEDEED_TYPE, ICMP_TIME_EXCEDEED_CODE,interfata, buffer, 
+lungime);
+-host_unreacheable returnează  mesaj_icmp(ICMP_DEST_UNREACHABLE_TYPE, ICMP_DEST_UNREACHABLE_CODE, 
+interfata, buffer, lungime);
+	Funcţia verificare_ttl_si_gestionare_timeout(struct iphdr *header_IPV4, char *buffer, int 
+interfata, size_t *lungime) are rolul de a verifica că ttl este mai mare decȃt 1. Ȋn caz contrar, 
+time to live expiră şi nu am găsit rută => Voi apela timeout.
+	Funcţia recalculare_checksum primeşte ca parametru un header IPv4. Ea calculează checksum şi 
+decrementează ttl cu 1.
+	Funcţia gestionare_ruta_si_arp(struct iphdr *header_IPV4, struct ether_header *ethernet_header, 
+int interfata, char *buffer, size_t lungime) caută următoarul punct intermediar către destinaţie. 
+Dacă nu este găsită nicio intrare nouă ȋn tabelă, funcţia host_unreacheable va fi apelată. Dacă 
+adresa MAC nu este găsită în tabela ARP, se pregătește un pachet ARP pentru a solicita adresa MAC 
+corespunzătoare adresei IP a următorului hop. Se pregătește și se trimite un pachet ARP de tipul 
+"who-has". Se actualizează antetul Ethernet cu informațiile necesare pentru trimiterea pachetului 
+ARP, inclusiv tipul Ethernet și adresele MAC sursă și destinație. La final, apelez 
+send_to_link (urm->interface, buffer, lungime).
+	Funcţia trimite_pachete_ipv4(char *buffer, int interfata, size_t lungime) ȋnglobează ultimele 
+3 funcţii pentru a putea trimite pachete IPv4. Funcţia apelează verificare_ttl_si_gestionare_timeout, 
+verifică checksum-ul, apelează funcţia recalculare_checksum şi la final apelez gestionare_ruta_si_arp. 
+	
+	Ȋn funcţia main, ȋmi definesc un  buffer de 1600 de octeţi. Citesc tabela de rutare cu 
+read_rtable(argv[1],rtable). De menţionat faptul că am modificat această funcţie. Am modificat signatura 
+( int read_rtable(const char *path, struct nod_arbore *rtable)) pentru a se potrivi nevoilor mele 
+(lucru cu arbore ȋn loc de un vector, deoarece am nevoie de căutare eficientă). Am ȋnlocuit cele 4 if-uri 
+cu un case. La final, adaug nodul ȋn arbore cu funcţia adauga_nod(root, rtable).
+	In while(1), verific if (header_ethernet->ether_type == ntohs(ETHERTYPE_ARP)) (arp are 0x806). Dacă 
+operația ARP din pachet este o cerere (ARP_REQUEST_OP), atunci routerul răspunde cu un pachet ARP de tipul 
+"reply". Acest lucru se face prin actualizarea opțiunii operației ARP la "reply", schimbând adresa de 
+destinație a pachetului cu adresa de sursă și trimiterea răspunsului ARP pe linkul corespunzător.
+    Dacă operația ARP este un "reply" (ARP_REPLY_OP), atunci routerul actualizează tabela ARP locală cu 
+adresa IP și adresa MAC primite în pachetul ARP. Apoi, routerul caută pachete din coada ARP care trebuie 
+trimise și care au adresa IP de destinație corespunzătoare adresei IP din pachetul ARP primit. Aceste 
+pachete sunt trimise către destinație și sunt eliminate din coadă.
+    Se verifică dacă tipul de ethernet al pachetului este IPv4 (ETHERTYPE_IPV4). Dacă este, routerul 
+îl gestionează ca un pachet IPv4. Dacă adresa de destinație corespunde adresei IP a interfeței, atunci 
+routerul interpretează pachetul IPv4 ca o cerere ICMP Echo (Ping). Se verifică suma de control ICMP 
+pentru a asigura integritatea pachetului ICMP. Se actualizează tipul și codul ICMP pentru a indica 
+un răspuns ICMP Echo Reply. Adresele IP sursă și destinație din header-ul IPv4 sunt interschimbate 
+pentru a trimite răspunsul înapoi la sursa inițială. Se recalculează suma de control pentru header-ul 
+IPv4 și pentru header-ul ICMP. Se trimite pachetul IPv4 modificat înapoi pe interfața corespunzătoare 
+utilizând funcția trimite_pachete_ipv4().
+    La final, eliberez memoria arborelui. 
+
+Probleme:
+-primeam Seg Fault (am rezolvat prin eliberarea paylaodului pentru pachetele de IPV4)
+-iniţial n-am folosit arbore şi aveam probleme de eficienţă
+-nu ȋmi treceau testele icmp_timeout şi icmp_host_unreacheable (am creat funcţiile timeout şi host_unreacheable).
